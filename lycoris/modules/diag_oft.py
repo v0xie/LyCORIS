@@ -73,8 +73,9 @@ class DiagOFTModule(ModuleCustomSD):
         self.org_module[0].forward = self.forward
     
     def custom_state_dict(self):
+        oft_name = 'oft_blocks' if self.constrain > 0 else 'oft_diag'
         return {
-            'oft_diag': self.get_r()
+            oft_name: self.get_r()
         }
     
     def get_r(self):

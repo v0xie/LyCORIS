@@ -20,6 +20,7 @@ from ..modules.ia3 import IA3Module
 from ..modules.lokr import LokrModule
 from ..modules.dylora import DyLoraModule
 from ..modules.glora import GLoRAModule
+from ..modules.vera import VeRAModule
 from ..modules.norms import NormModule
 from ..modules.full import FullModule
 from ..modules.diag_oft import DiagOFTModule
@@ -38,6 +39,7 @@ network_module_dict = {
     'lokr': LokrModule,
     'dylora': DyLoraModule,
     'glora': GLoRAModule,
+    'vera': VeRAModule,
     'full': FullModule,
     'diag-oft': DiagOFTModule,
 }

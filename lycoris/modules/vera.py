@@ -41,11 +41,13 @@ class VeRAModule(ModuleCustomSD):
 
         if isinstance(org_module, nn.Linear):
             self.op = F.linear
-            self.dim = org_module.out_features
+            self.in_dim = org_module.in_features
+            self.out_dim = org_module.out_features
             self.kw_dict = {}
         elif isinstance(org_module, nn.Conv2d):
             self.op = F.conv2d
-            self.dim = org_module.out_channels
+            self.in_dim = org_module.in_channels
+            self.out_dim = org_module.out_channels
             self.kw_dict = {
                 "stride": org_module.stride,
                 "padding": org_module.padding,
@@ -74,21 +76,23 @@ class VeRAModule(ModuleCustomSD):
         #else:
         #    raise NotImplementedError
         self.shape = org_module.weight.shape
-        self.b = torch.nn.Parameter(torch.zeros(self.dim, self.lora_dim))
-        self.d = torch.nn.Parameter(torch.ones(self.lora_dim, self.dim))
+        self.b = torch.nn.Parameter(torch.zeros(self.in_dim, self.lora_dim))
+        self.d = torch.nn.Parameter(torch.ones(self.lora_dim, self.in_dim))
 
         # Initialize shared buffer FIXME: this could be a problem when using multiple GPUs
+        self.mat_shape = (self.in_dim, self.in_dim)
         torch.manual_seed(self.seed)
         if SHARED_A is None:
             torch.manual_seed(self.seed)
-            SHARED_A = torch.empty(self.shape)
+            SHARED_A = torch.empty(self.mat_shape)
+            #SHARED_A = torch.empty(self.shape)
             torch.manual_seed(self.seed)
             torch.nn.init.kaiming_uniform_(SHARED_A, a=math.sqrt(5))
             #SHARED_A = torch.empty([in_dim, in_dim])
 
         if SHARED_B is None:
             torch.manual_seed(self.seed+1) # add 1 to get a different matrix
-            SHARED_B = torch.empty(self.shape)
+            SHARED_B = torch.empty(self.mat_shape)
             torch.manual_seed(self.seed+1)
             torch.nn.init.kaiming_uniform_(SHARED_B, a=math.sqrt(5))
 
@@ -134,13 +138,12 @@ class VeRAModule(ModuleCustomSD):
     def make_weight(self, device=None):
         #wa1 = self.a1.weight.view(self.a1.weight.size(0), -1)
         #wa2 = self.a2.weight.view(self.a2.weight.size(0), -1)
-        wb = self.b.view(self.b.size(0), -1)
-        wb = torch.diag(wb)
-        wd = self.d.view(self.d.size(0), -1)
-        wd = torch.diag(wd)
-
+        A = SHARED_A.to(device=device)
+        B = SHARED_B.to(device=device)
+        wb = torch.diag(self.b.flatten()).to(device=device)
+        wd = torch.diag(self.d.flatten()).to(device=device)
         #orig = self.org_module[0].weight.view(self.org_module[0].weight.size(0), -1)
-        return (wb @ SHARED_B @ wd @ SHARED_A)
+        return (wb @ B @ wd @ A)
         #return (wb @ SHARED_B @ wd @ SHARED_A) + orig
 
     def forward(self, x):

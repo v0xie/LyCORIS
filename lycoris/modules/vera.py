@@ -7,8 +7,8 @@ import random
 
 from .base import ModuleCustomSD
 
-SHARED_A = None
-SHARED_B = None
+#SHARED_A = None
+#SHARED_B = None
 
 class VeRAModule(ModuleCustomSD):
     """
@@ -20,13 +20,13 @@ class VeRAModule(ModuleCustomSD):
         self, 
         lora_name, org_module: nn.Module, 
         multiplier=1.0, 
-        lora_dim=1, alpha=1, 
+        lora_dim=8, alpha=1, 
         dropout=0., rank_dropout=0., module_dropout=0.,
         rank_dropout_scale=False,
         *args,
         **kwargs,
     ):
-        global SHARED_A, SHARED_B
+        #global SHARED_A, SHARED_B
 
         """ if alpha == 0 or None, alpha is rank (no scaling). """
         super().__init__()
@@ -57,48 +57,63 @@ class VeRAModule(ModuleCustomSD):
         else:
             raise NotImplementedError
 
-        #if isinstance(org_module, nn.Conv2d):
-        #    #assert org_module.kernel_size == (1,1)
-        #    in_dim = org_module.in_channels
-        #    out_dim = org_module.out_channels
-        #    k_size = org_module.kernel_size
-        #    #self.b = nn.Conv2d(in_dim, lora_dim, k_size, bias=False)
-        #    #self.d = nn.Conv2d(lora_dim, out_dim, k_size, bias=False)
-        #    self.b = nn.Conv2d(lora_dim, in_dim, k_size, bias=False)
-        #    self.d = nn.Conv2d(lora_dim, out_dim, k_size, bias=False)
-        #elif isinstance(org_module, nn.Linear):
-        #    in_dim = org_module.in_features
-        #    out_dim = org_module.out_features
-        #    #self.b = nn.Linear(in_dim, lora_dim, bias=False)
-        #    #self.d = nn.Linear(lora_dim, out_dim, bias=False)
-        #    self.b = nn.Linear(lora_dim, in_dim, bias=False)
-        #    self.d = nn.Linear(lora_dim, out_dim, bias=False)
-        #else:
-        #    raise NotImplementedError
         self.shape = org_module.weight.shape
-        self.b = torch.nn.Parameter(torch.zeros(self.in_dim, self.lora_dim))
-        self.d = torch.nn.Parameter(torch.ones(self.lora_dim, self.in_dim))
+        if isinstance(org_module, nn.Conv2d):
+            #assert org_module.kernel_size == (1,1)
+            in_dim = org_module.in_channels
+            out_dim = org_module.out_channels
+            k_size = org_module.kernel_size
+            #self.b = nn.Conv2d(in_dim, lora_dim, k_size, bias=False)
+            #self.d = nn.Conv2d(lora_dim, out_dim, k_size, bias=False)
+            #self.b = nn.Conv2d(lora_dim, in_dim, k_size, bias=False)
+            #self.d = nn.Conv2d(lora_dim, out_dim, k_size, bias=False)
+            self.shared_b = torch.empty([self.shape[0], self.lora_dim])
+            self.shared_a = torch.empty((self.lora_dim, self.shape[1]))
+            self.b = nn.Conv2d(1, self.shape[0], k_size, bias=False)
+            self.d = nn.Conv2d(1, self.lora_dim, k_size, bias=False)
+            #self.b = torch.nn.Parameter(torch.zeros(1, self.shape[0], k_size))
+            #self.d = torch.nn.Parameter(torch.ones(1, self.lora_dim, k_size))
+        elif isinstance(org_module, nn.Linear):
+            in_dim = org_module.in_features
+            out_dim = org_module.out_features
+            self.shared_b = torch.empty([self.shape[0], self.lora_dim])
+            self.shared_a = torch.empty([self.lora_dim, self.shape[1]])
+            #self.b = torch.nn.Parameter(torch.zeros(1, self.shape[0]))
+            #self.d = torch.nn.Parameter(torch.ones(1, self.lora_dim))
+            self.b = nn.Linear(1, self.shape[0], bias=False)
+            self.d = nn.Linear(1, self.lora_dim, bias=False)
+        else:
+            raise NotImplementedError
+
+        #self.shared_b = torch.empty([self.shape[0], self.lora_dim])
+        torch.manual_seed(self.seed+1)
+        torch.nn.init.kaiming_uniform_(self.shared_b, a=math.sqrt(5))
+        self.register_buffer('mat_b', self.shared_b)
+
+        #self.shared_a = torch.empty([self.lora_dim, self.shape[1]])
+        torch.manual_seed(self.seed)
+        torch.nn.init.kaiming_uniform_(self.shared_a, a=math.sqrt(5))
+        self.register_buffer('mat_a', self.shared_a)
+
+
+        #self.b = torch.nn.Parameter(torch.zeros(1, self.shape[0]))
+        #self.d = torch.nn.Parameter(torch.ones(1, self.lora_dim))
+
 
         # Initialize shared buffer FIXME: this could be a problem when using multiple GPUs
         self.mat_shape = (self.in_dim, self.in_dim)
-        torch.manual_seed(self.seed)
-        if SHARED_A is None:
-            torch.manual_seed(self.seed)
-            SHARED_A = torch.empty(self.mat_shape)
-            #SHARED_A = torch.empty(self.shape)
-            torch.manual_seed(self.seed)
-            torch.nn.init.kaiming_uniform_(SHARED_A, a=math.sqrt(5))
-            #SHARED_A = torch.empty([in_dim, in_dim])
+        #torch.manual_seed(self.seed)
+        #if SHARED_A is None:
 
-        if SHARED_B is None:
-            torch.manual_seed(self.seed+1) # add 1 to get a different matrix
-            SHARED_B = torch.empty(self.mat_shape)
-            torch.manual_seed(self.seed+1)
-            torch.nn.init.kaiming_uniform_(SHARED_B, a=math.sqrt(5))
+        #if SHARED_B is None:
+        #    torch.manual_seed(self.seed+1) # add 1 to get a different matrix
+        #    SHARED_B = torch.empty(self.mat_shape)
+        #    torch.manual_seed(self.seed+1)
+        #    torch.nn.init.kaiming_uniform_(SHARED_B, a=math.sqrt(5))
 
         d_init = 10.0e-07 # ablation pg.9
-        torch.nn.init.constant_(self.b, 0)
-        torch.nn.init.constant_(self.d, d_init)
+        torch.nn.init.constant_(self.b.weight, 0)
+        torch.nn.init.constant_(self.d.weight, d_init)
 
         if dropout:
             self.dropout = nn.Dropout(dropout)
@@ -128,22 +143,29 @@ class VeRAModule(ModuleCustomSD):
         self.org_forward = self.org_module[0].forward
         self.org_module[0].forward = self.forward
     
-    def get_weight(self):
-        wb = self.b.weight.view(self.b.weight.size(0), -1)
-        wb = torch.diag(wb)
-        wd = self.d.weight.view(self.d.weight.size(0), -1)
-        wd = torch.diag(wd)
-        return (wb @ SHARED_B @ wd @ SHARED_A)
+    def get_a(self):
+        torch.manual_seed(self.seed+1)
+        torch.nn.init.kaiming_uniform_(self.shared_b, a=math.sqrt(5))
+        self.register_buffer('mat_b', self.shared_b)
 
+    def get_b(self):
+        shared_b = torch.empty([self.shape[0], self.lora_dim])
+        torch.manual_seed(self.seed+1)
+
+        torch.nn.init.kaiming_uniform_(self.shared_b, a=math.sqrt(5))
+        self.register_buffer('mat_b', self.shared_b)
+    
     def make_weight(self, device=None):
-        #wa1 = self.a1.weight.view(self.a1.weight.size(0), -1)
-        #wa2 = self.a2.weight.view(self.a2.weight.size(0), -1)
-        A = SHARED_A.to(device=device)
-        B = SHARED_B.to(device=device)
-        wb = torch.diag(self.b.flatten()).to(device=device)
-        wd = torch.diag(self.d.flatten()).to(device=device)
+        b = self.b.weight.view(self.b.weight.size(0), -1)
+        d = self.d.weight.view(self.d.weight.size(0), -1)
+        #A = SHARED_A.to(device=device)
+        #B = SHARED_B.to(device=device)
+        #self.shared_a = self.shared_a.to(device=device)
+        #self.shared_b = self.shared_b.to(device=device)
+        wb = torch.diag(b.flatten()).to(device=device)
+        wd = torch.diag(d.flatten()).to(device=device)
         #orig = self.org_module[0].weight.view(self.org_module[0].weight.size(0), -1)
-        return (wb @ B @ wd @ A)
+        return (wb @ self.mat_b) @ (wd @ self.mat_a)
         #return (wb @ SHARED_B @ wd @ SHARED_A) + orig
 
     def forward(self, x):

@@ -144,10 +144,10 @@ class VeRAModule(ModuleCustomSD):
                 return self.org_forward(x)
         scale = self.scale * self.multiplier
 
-        if self.is_conv:
-            return self.org_forward(x)
-
         w = self.make_weight(device=x.device)
-        #w = self.make_weight(scale, x.device)
+
+        if self.is_conv:
+            w = w.view(-1, w.size(1), 1, 1)
+
         kw_dict = self.kw_dict | {"weight": w, "bias": self.org_module[0].bias}
         return self.org_forward(x) + self.op(x, **kw_dict)

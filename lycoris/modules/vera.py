@@ -60,6 +60,7 @@ class VeRAModule(ModuleCustomSD):
         self.shape = org_module.weight.shape
         if isinstance(org_module, nn.Conv2d):
             #assert org_module.kernel_size == (1,1)
+            self.is_conv = True
             in_dim = org_module.in_channels
             out_dim = org_module.out_channels
             k_size = org_module.kernel_size
@@ -74,6 +75,7 @@ class VeRAModule(ModuleCustomSD):
             #self.b = torch.nn.Parameter(torch.zeros(1, self.shape[0], k_size))
             #self.d = torch.nn.Parameter(torch.ones(1, self.lora_dim, k_size))
         elif isinstance(org_module, nn.Linear):
+            self.is_conv = False
             in_dim = org_module.in_features
             out_dim = org_module.out_features
             self.shared_b = torch.empty([self.shape[0], self.lora_dim])
@@ -83,6 +85,7 @@ class VeRAModule(ModuleCustomSD):
             self.b = nn.Linear(1, self.shape[0], bias=False)
             self.d = nn.Linear(1, self.lora_dim, bias=False)
         else:
+            self.is_conv = False
             raise NotImplementedError
 
         #self.shared_b = torch.empty([self.shape[0], self.lora_dim])
@@ -173,6 +176,9 @@ class VeRAModule(ModuleCustomSD):
             if torch.rand(1) < self.module_dropout:
                 return self.org_forward(x)
         scale = self.scale * self.multiplier
+
+        if self.is_conv:
+            return self.org_forward(x)
 
         w = self.make_weight(device=x.device)
         #w = self.make_weight(scale, x.device)
